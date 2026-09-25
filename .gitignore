@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+*.db
+shortlinks.db
+dist/
+build/
+.DS_Store

@@ -1,0 +1,149 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    DEPLOYMENT CHECKLIST - FOLLOW THIS
+═══════════════════════════════════════════════════════════════════════════════
+
+FILES YOU HAVE:
+  ✅ index.html
+  ✅ server.js (RENAMED from server-supabase.js)
+  ✅ package.json
+  ✅ vercel.json
+  ✅ .gitignore
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 1: BEFORE UPLOADING
+═══════════════════════════════════════════════════════════════════════════════
+
+Edit index.html:
+  Line ~350: const API_URL = 'https://your-api.com';
+  
+Change to:
+  const API_URL = 'https://shortlink-YOURNAME.vercel.app';
+
+(Use your own name like "shortlink-justin")
+
+Save file.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 2: CREATE GITHUB REPO
+═══════════════════════════════════════════════════════════════════════════════
+
+Go to: https://github.com/new
+Repo name: shortlink-manager
+Click: Create repository
+
+You see instructions. Follow the green box.
+
+Copy these commands (replace YOUR_USERNAME):
+
+  git init
+  git add .
+  git commit -m "Initial commit: shortlink service"
+  git branch -M main
+  git remote add origin https://github.com/YOUR_USERNAME/shortlink-manager.git
+  git push -u origin main
+
+Paste in Command Prompt/Terminal in your folder.
+
+Done uploading! ✅
+
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 3: DEPLOY TO VERCEL
+═══════════════════════════════════════════════════════════════════════════════
+
+Go to: https://vercel.com
+Click: Sign up → Continue with GitHub
+
+On Vercel dashboard:
+  Click: "Add New" → "Project"
+  Click: "Import Git Repository"
+  Find: "shortlink-manager"
+  Click: "Import"
+
+Wait for build (2-3 minutes).
+
+When done, go to: Settings → Environment Variables
+
+ADD 3 VARIABLES:
+
+Variable 1:
+  Name: SUPABASE_URL
+  Value: https://cfdehwctigvtvijndlns.supabase.co
+  (Copy from your Supabase)
+  Click: Add
+
+Variable 2:
+  Name: SUPABASE_KEY
+  Value: eyJhbGc... (long text)
+  (Copy the anon public key from Supabase)
+  Click: Add
+
+Variable 3:
+  Name: DOMAIN
+  Value: https://shortlink-YOURNAME.vercel.app
+  (Same as in index.html)
+  Click: Add
+
+Go to: Deployments tab
+Click: three dots (...) on latest deployment
+Click: "Redeploy"
+
+Wait 1-2 minutes for "Ready" status. ✅
+
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 4: TEST IT
+═══════════════════════════════════════════════════════════════════════════════
+
+Open browser:
+  https://shortlink-YOURNAME.vercel.app
+
+You see purple dashboard! ✅
+
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 5: BULK IMPORT CHAPTERS
+═══════════════════════════════════════════════════════════════════════════════
+
+On dashboard, scroll to "Bulk Import"
+
+Paste all 15 chapter links (from KOFI_GUIDE.md)
+
+Click: "Import Bulk URLs"
+
+Wait 2 seconds
+
+See: "✓ Successfully imported 15 links" ✅
+
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 6: UPDATE KO-FI
+═══════════════════════════════════════════════════════════════════════════════
+
+On dashboard, scroll to "Your Links"
+
+Copy short links to Ko-fi
+
+Done! 🎉
+
+
+═══════════════════════════════════════════════════════════════════════════════
+IF YOU GET STUCK:
+═══════════════════════════════════════════════════════════════════════════════
+
+Error: "SUPABASE_URL is missing"
+  → Check Vercel environment variables are added
+  → Redeploy after adding
+
+Error: "Links not saving"
+  → Did you create database table in Supabase? (DEPLOY_ONLY.md Step 3)
+  → Did you add SUPABASE_KEY and SUPABASE_URL to Vercel?
+
+Error: "Cannot connect to API"
+  → Make sure API_URL in index.html matches your Vercel domain
+  → Make sure it has "https://" at the start
+
+═══════════════════════════════════════════════════════════════════════════════
+YOU GOT THIS! 🚀
+═══════════════════════════════════════════════════════════════════════════════
