@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { createClient } = require('@supabase/supabase-js');
+const { Pool } = require('pg');
 const path = require('path');
 
 const app = express();
@@ -8,13 +8,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '.')));
 
-console.log('SUPABASE_URL:', process.env.SUPABASE_URL);
-console.log('SUPABASE_KEY exists:', !!process.env.SUPABASE_KEY);
+// Neon connection
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
 
-const supabase = createClient(
-    process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-    process.env.SUPABASE_KEY || 'placeholder'
-);
+console.log('Connected to Neon');
 
 function generateCode() {
     const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -36,21 +36,15 @@ app.post('/api/links', async (req, res) => {
     const code = generateCode();
 
     try {
-        const { data, error } = await supabase
-            .from('links')
-            .insert({ id, code, url, title: title || 'Link' })
-            .select();
+        const result = await pool.query(
+            'INSERT INTO links (id, code, url, title, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING *',
+            [id, code, url, title || 'Link']
+        );
 
-        console.log('Supabase response:', { data, error });
-
-        if (error) {
-            console.error('Supabase error:', error);
-            return res.status(400).json({ error: error.message });
-        }
-
+        console.log('Link created:', result.rows[0]);
         res.json({ success: true, code, id });
     } catch (err) {
-        console.error('Catch error:', err);
+        console.error('Database error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -63,43 +57,41 @@ app.post('/api/links/bulk', async (req, res) => {
         return res.status(400).json({ error: 'No links' });
     }
 
-    const toInsert = links.map((l, i) => ({
-        id: (Date.now() + i).toString(),
-        code: generateCode(),
-        url: l.url,
-        title: l.title || 'Link'
-    }));
-
     try {
-        const { data, error } = await supabase
-            .from('links')
-            .insert(toInsert)
-            .select();
+        const values = links.map((l, i) => [
+            (Date.now() + i).toString(),
+            generateCode(),
+            l.url,
+            l.title || 'Link'
+        ]);
 
-        console.log('Bulk response:', { data, error });
+        const placeholders = values.map((_, i) => 
+            `($${i*4+1}, $${i*4+2}, $${i*4+3}, $${i*4+4})`
+        ).join(',');
 
-        if (error) {
-            console.error('Supabase error:', error);
-            return res.status(400).json({ error: error.message });
-        }
+        const flatValues = values.flat();
 
-        res.json({ count: toInsert.length });
+        await pool.query(
+            `INSERT INTO links (id, code, url, title, created_at) 
+             VALUES ${placeholders}`,
+            flatValues
+        );
+
+        res.json({ count: links.length });
     } catch (err) {
-        console.error('Catch error:', err);
+        console.error('Database error:', err);
         res.status(500).json({ error: err.message });
     }
 });
 
 app.get('/api/links', async (req, res) => {
     try {
-        const { data, error } = await supabase
-            .from('links')
-            .select('*')
-            .order('created_at', { ascending: false });
+        const result = await pool.query(
+            'SELECT * FROM links ORDER BY created_at DESC'
+        );
 
-        console.log('Load links:', { count: data?.length, error });
-
-        res.json({ links: data || [] });
+        console.log('Load links:', { count: result.rows.length });
+        res.json({ links: result.rows });
     } catch (err) {
         console.error('Error:', err);
         res.json({ links: [] });
@@ -107,21 +99,40 @@ app.get('/api/links', async (req, res) => {
 });
 
 app.delete('/api/links/:id', async (req, res) => {
-    const { error } = await supabase.from('links').delete().eq('id', req.params.id);
-    res.json({ success: !error });
+    try {
+        await pool.query('DELETE FROM links WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error:', err);
+        res.json({ success: false });
+    }
 });
 
 app.get('/:code', async (req, res) => {
     try {
         const { code } = req.params;
-        if (code.includes('.') || code === 'api') return res.sendFile(path.join(__dirname, 'index.html'));
+        if (code.includes('.') || code === 'api') {
+            return res.sendFile(path.join(__dirname, 'index.html'));
+        }
 
-        const { data } = await supabase.from('links').select('url').eq('code', code).single();
-        if (!data) return res.sendFile(path.join(__dirname, 'index.html'));
+        const result = await pool.query(
+            'SELECT url FROM links WHERE code = $1 LIMIT 1',
+            [code]
+        );
 
-        res.redirect(301, data.url);
+        if (!result.rows[0]) {
+            return res.sendFile(path.join(__dirname, 'index.html'));
+        }
+
+        // Increment clicks
+        await pool.query(
+            'UPDATE links SET clicks = clicks + 1 WHERE code = $1',
+            [code]
+        );
+
+        res.redirect(301, result.rows[0].url);
     } catch (err) {
-        res.sendFile(path.join(__dirname, 'index.html'));
+        console.sendFile(path.join(__dirname, 'index.html'));
     }
 });
 
