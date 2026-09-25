@@ -5,18 +5,14 @@ const path = require('path');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, '.')));
 
-let supabase = null;
-
-try {
-    if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
-        supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
-    }
-} catch (e) {
-    console.log('Supabase error:', e.message);
-}
+const supabase = createClient(
+    process.env.SUPABASE_URL || '',
+    process.env.SUPABASE_KEY || ''
+);
 
 function generateCode() {
     const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -26,83 +22,102 @@ function generateCode() {
 }
 
 app.post('/api/links', async (req, res) => {
-    if (!supabase) return res.status(500).json({ error: 'DB not ready' });
-    
-    const { url, title } = req.body || {};
-    if (!url) return res.status(400).json({ error: 'No URL' });
-
     try {
-        const { error } = await supabase.from('links').insert({
+        const body = req.body || {};
+        const url = body.url || '';
+        const title = body.title || 'Link';
+
+        if (!url || !url.includes('http')) {
+            return res.status(400).json({ error: 'Invalid URL' });
+        }
+
+        const result = await supabase.from('links').insert({
             id: Date.now().toString(),
             code: generateCode(),
-            url,
-            title: title || 'Link'
-        });
-        if (error) return res.status(400).json({ error: error.message });
-        res.json({ ok: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+            url: url,
+            title: title
+        }).select();
+
+        res.json({ success: true, data: result.data });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error: ' + err.message });
     }
 });
 
 app.post('/api/links/bulk', async (req, res) => {
-    if (!supabase) return res.status(500).json({ error: 'DB not ready' });
-    
-    const { links } = req.body || {};
-    if (!Array.isArray(links)) return res.status(400).json({ error: 'Invalid' });
-
     try {
-        const rows = links.filter(l => l.url).map((l, i) => ({
-            id: Date.now() + i,
-            code: generateCode(),
-            url: l.url,
-            title: l.title || 'Link'
-        }));
+        const body = req.body || {};
+        const links = body.links || [];
 
-        const { error } = await supabase.from('links').insert(rows);
-        if (error) return res.status(400).json({ error: error.message });
-        res.json({ count: rows.length });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+        if (!Array.isArray(links) || links.length === 0) {
+            return res.status(400).json({ error: 'No links provided' });
+        }
+
+        const toInsert = [];
+        for (let i = 0; i < links.length; i++) {
+            const link = links[i];
+            if (link && link.url && link.url.includes('http')) {
+                toInsert.push({
+                    id: (Date.now() + i).toString(),
+                    code: generateCode(),
+                    url: link.url,
+                    title: link.title || 'Link'
+                });
+            }
+        }
+
+        if (toInsert.length === 0) {
+            return res.status(400).json({ error: 'No valid URLs' });
+        }
+
+        const result = await supabase.from('links').insert(toInsert).select();
+        res.json({ count: toInsert.length, data: result.data });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error: ' + err.message });
     }
 });
 
 app.get('/api/links', async (req, res) => {
-    if (!supabase) return res.json({ links: [] });
-    
     try {
-        const { data } = await supabase.from('links').select('*');
-        res.json({ links: data || [] });
-    } catch (e) {
+        const result = await supabase.from('links').select('*').order('created_at', { ascending: false });
+        res.json({ links: result.data || [] });
+    } catch (err) {
         res.json({ links: [] });
     }
 });
 
 app.delete('/api/links/:id', async (req, res) => {
-    if (!supabase) return res.status(500).json({ error: 'DB not ready' });
-    
     try {
         await supabase.from('links').delete().eq('id', req.params.id);
-        res.json({ ok: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
 app.get('/:code', async (req, res) => {
     try {
-        if (req.params.code.includes('.')) return res.sendFile(path.join(__dirname, 'index.html'));
-        if (!supabase) return res.sendFile(path.join(__dirname, 'index.html'));
+        const { code } = req.params;
+        if (code.includes('.') || code === 'api' || code.length < 3) {
+            return res.sendFile(path.join(__dirname, 'index.html'));
+        }
 
-        const { data } = await supabase.from('links').select('url').eq('code', req.params.code).single();
-        if (!data) return res.sendFile(path.join(__dirname, 'index.html'));
+        const result = await supabase.from('links').select('url').eq('code', code).single();
         
-        res.redirect(301, data.url);
-    } catch (e) {
+        if (!result.data) {
+            return res.sendFile(path.join(__dirname, 'index.html'));
+        }
+
+        res.redirect(301, result.data.url);
+    } catch (err) {
         res.sendFile(path.join(__dirname, 'index.html'));
     }
 });
 
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 module.exports = app;
