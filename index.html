@@ -398,56 +398,60 @@
             }
         }
 
-        async function bulkImport() {
-            const text = document.getElementById('bulk-urls').value.trim();
-            const msgEl = document.getElementById('message-bulk');
+       async function bulkImport() {
+    const text = document.getElementById('bulk-urls').value.trim();
+    const msgEl = document.getElementById('message-bulk');
 
-            if (!text) {
-                showMessage(msgEl, 'Please paste some URLs', 'error');
-                return;
-            }
+    if (!text) {
+        showMessage(msgEl, 'Please paste some URLs', 'error');
+        return;
+    }
 
-            const lines = text.split('\n').filter(l => l.trim());
-            const links = lines.map(line => {
-                const parts = line.split(' - ');
-                return {
-                    url: parts[0].trim(),
-                    title: parts[1]?.trim() || 'Untitled'
-                };
-            }).filter(l => l.url);
-
-            if (!links.length) {
-                showMessage(msgEl, 'No valid URLs found', 'error');
-                return;
-            }
-
-            const btn = document.getElementById('btn-bulk');
-            btn.disabled = true;
-            btn.innerHTML = `<span class="loading"></span> Importing ${links.length} links...`;
-
-            try {
-                const response = await fetch(`${API_URL}/api/links/bulk`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ links })
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    showMessage(msgEl, `✓ Successfully imported ${data.count} links`, 'success');
-                    document.getElementById('bulk-urls').value = '';
-                    loadLinks();
-                } else {
-                    showMessage(msgEl, data.error || 'Failed to import links', 'error');
-                }
-            } catch (err) {
-                showMessage(msgEl, 'Error: ' + err.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = 'Import Bulk URLs';
-            }
+    const lines = text.split('\n').filter(l => l.trim());
+    const links = [];
+    
+    lines.forEach(line => {
+        const parts = line.split(' - ');
+        const url = parts[0]?.trim();
+        const title = parts[1]?.trim() || 'Untitled';
+        
+        if (url && url.startsWith('http')) {
+            links.push({ url, title });
         }
+    });
+
+    if (!links.length) {
+        showMessage(msgEl, 'No valid URLs found', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('btn-bulk');
+    btn.disabled = true;
+    btn.innerHTML = `<span class="loading"></span> Importing ${links.length} links...`;
+
+    try {
+        const response = await fetch(window.location.origin + '/api/links/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ links })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showMessage(msgEl, `✓ Successfully imported ${data.count} links`, 'success');
+            document.getElementById('bulk-urls').value = '';
+            loadLinks();
+        } else {
+            showMessage(msgEl, data.error || 'Failed to import links', 'error');
+        }
+    } catch (err) {
+        showMessage(msgEl, 'Error: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Import Bulk URLs';
+    }
+}
 
         async function loadLinks() {
             try {
