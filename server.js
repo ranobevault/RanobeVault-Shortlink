@@ -4,84 +4,60 @@ const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-    console.error('Missing SUPABASE_URL or SUPABASE_KEY');
-    process.exit(1);
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
-
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '.')));
 
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
 function generateCode() {
     const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let code = '';
-    for (let i = 0; i < 6; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
     return code;
 }
 
 app.post('/api/links', async (req, res) => {
-    const { url, title } = req.body;
-
-    if (!url || !url.startsWith('http')) {
-        return res.status(400).json({ error: 'Invalid URL' });
-    }
-
-    const id = Date.now().toString();
-    const code = generateCode();
-
     try {
-        const { data, error } = await supabase
-            .from('links')
-            .insert({ id, code, url, title: title || 'Untitled' })
-            .select();
+        const { url, title } = req.body;
+        if (!url || !url.startsWith('http')) return res.status(400).json({ error: 'Invalid URL' });
+
+        const { error } = await supabase.from('links').insert({
+            id: Date.now().toString(),
+            code: generateCode(),
+            url,
+            title: title || 'Untitled'
+        });
 
         if (error) throw error;
-
-        res.json({
-            id,
-            code,
-            shortUrl: `${process.env.DOMAIN}/${code}`,
-            url,
-            title
-        });
+        res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to create link: ' + err.message });
+        console.error(err);
+        res.status(500).json({ error: err.message });
     }
 });
 
 app.post('/api/links/bulk', async (req, res) => {
-    const { links } = req.body;
-
-    if (!Array.isArray(links) || links.length === 0) {
-        return res.status(400).json({ error: 'Invalid links array' });
-    }
-
     try {
-        const linksToInsert = links
-            .filter(link => link.url && link.url.startsWith('http'))
-            .map(link => ({
-                id: Date.now().toString() + Math.random(),
+        const { links } = req.body;
+        if (!Array.isArray(links)) return res.status(400).json({ error: 'Invalid links' });
+
+        const toInsert = links
+            .filter(l => l.url && l.url.startsWith('http'))
+            .map((l, i) => ({
+                id: Date.now().toString() + i,
                 code: generateCode(),
-                url: link.url,
-                title: link.title || 'Untitled'
+                url: l.url,
+                title: l.title || 'Untitled'
             }));
 
-        const { error } = await supabase.from('links').insert(linksToInsert);
+        const { error } = await supabase.from('links').insert(toInsert);
         if (error) throw error;
 
-        res.json({ count: linksToInsert.length });
+        res.json({ count: toInsert.length });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to import links: ' + err.message });
+        console.error(err);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -95,49 +71,29 @@ app.get('/api/links', async (req, res) => {
         if (error) throw error;
         res.json({ links: data || [] });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to fetch links: ' + err.message });
+        console.error(err);
+        res.json({ links: [] });
     }
 });
 
 app.delete('/api/links/:id', async (req, res) => {
-    const { id } = req.params;
-
     try {
-        const { error } = await supabase
-            .from('links')
-            .delete()
-            .eq('id', id);
-
+        const { error } = await supabase.from('links').delete().eq('id', req.params.id);
         if (error) throw error;
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to delete link: ' + err.message });
+        console.error(err);
+        res.status(500).json({ error: err.message });
     }
 });
 
 app.get('/:code', async (req, res) => {
-    const { code } = req.params;
-
-    if (code.includes('.') || code === 'api') {
-        return res.sendFile(path.join(__dirname, 'index.html'));
-    }
-
     try {
-        const { data, error } = await supabase
-            .from('links')
-            .select('url, id')
-            .eq('code', code)
-            .single();
+        const { code } = req.params;
+        if (code.includes('.') || code === 'api') return res.sendFile(path.join(__dirname, 'index.html'));
 
-        if (error || !data) {
-            return res.sendFile(path.join(__dirname, 'index.html'));
-        }
-
-        supabase
-            .from('links')
-            .update({ clicks: supabase.rpc('increment', { amount: 1 }) })
-            .eq('id', data.id)
-            .then();
+        const { data, error } = await supabase.from('links').select('url').eq('code', code).single();
+        if (error || !data) return res.sendFile(path.join(__dirname, 'index.html'));
 
         res.redirect(301, data.url);
     } catch (err) {
@@ -145,12 +101,6 @@ app.get('/:code', async (req, res) => {
     }
 });
 
-app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-app.listen(PORT, () => {
-    console.log(`ShortLink server running on port ${PORT}`);
-});
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 module.exports = app;
